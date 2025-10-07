@@ -81,7 +81,8 @@ export const AddUser = () => {
             createdBy: userData.uid
         };
 
-        // Write chat metadata for both users
+        toast.success("Chat created");
+
         Promise.all([
             set(ref(db, `/userChatList/${userData.uid}/${chatId}`), chatMetaForCurrentUser),
             set(ref(db, `/userChatList/${selectedUser.id}/${chatId}`), chatMetaForSelectedUser)
