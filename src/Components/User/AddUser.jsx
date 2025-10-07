@@ -48,6 +48,7 @@ export const AddUser = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
         if (!selectedUser) {
             setError("Please select a user from the list.");
             toast.error("Please select a user from the list.");
@@ -81,16 +82,24 @@ export const AddUser = () => {
         };
 
         // Write chat metadata for both users
-        set(ref(db, `/userChatList/${userData.uid}/${chatId}`), chatMetaForCurrentUser);
-        set(ref(db, `/userChatList/${selectedUser.id}/${chatId}`), chatMetaForSelectedUser);
-
-        toast.success("Chat created successfully!");
-        setShowNewChatModel(false);
-        setError("");
-        setUserName("");
-        setSelectedUser(null);
-        setMatchedUsers([]);
+        Promise.all([
+            set(ref(db, `/userChatList/${userData.uid}/${chatId}`), chatMetaForCurrentUser),
+            set(ref(db, `/userChatList/${selectedUser.id}/${chatId}`), chatMetaForSelectedUser)
+        ])
+            .then(() => {
+                toast.success("Chat created successfully!");
+                // Auto-close modal
+                setShowNewChatModel(false);
+                setError("");
+                setUserName("");
+                setSelectedUser(null);
+                setMatchedUsers([]);
+            })
+            .catch(() => {
+                toast.error("Failed to create chat. Please try again.");
+            });
     };
+
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
