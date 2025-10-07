@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from "react";
-import { Plus, Sun, Moon, LogOut, Settings, Menu, User } from "lucide-react";
+import { Plus, Sun, Moon, LogOut, Settings, Menu } from "lucide-react";
 import { NewChatModalContext, UserDataContext } from "../Global/GlobalData";
 import { getDatabase, onValue, ref } from "firebase/database";
 import { Firebase } from "../Global/Firebase";
@@ -8,7 +8,6 @@ import { Link, useNavigate } from "react-router";
 import { getAuth, signOut } from "firebase/auth";
 import { toast } from "react-toastify";
 import { ChatRoomComponent } from "./ChatRoom";
-import { ChatDetailsPanel } from "./Details";
 import { AddUser } from "./AddUser";
 
 export const UserDetails = () => {
@@ -19,27 +18,26 @@ export const UserDetails = () => {
     const { theme, setTheme } = useContext(ThemeContext);
 
     useEffect(() => {
-        async function fetchingUserDetails() {
-            if (userData) {
-                const db = getDatabase(Firebase);
-                const userRef = ref(db, `/usersData/${userData.uid}`);
-                onValue(userRef, (res) => {
-                    const data = res.val();
-                    setUserDetails(data);
-                });
-            }
+        if (userData) {
+            const db = getDatabase(Firebase);
+            const userRef = ref(db, `/usersData/${userData.uid}`);
+            onValue(userRef, (res) => {
+                setUserDetails(res.val());
+            });
         }
-        fetchingUserDetails();
     }, [userData]);
 
     const navigate = useNavigate();
+
     function handleLogout() {
-        if (confirm("Do you want to sign out ?")) {
+        if (confirm("Do you want to sign out?")) {
             const auth = getAuth(Firebase);
-            signOut(auth).then(() => {
-                toast.success("Logout Successful");
-                navigate('/');
-            }).catch((error) => console.log(error));
+            signOut(auth)
+                .then(() => {
+                    toast.success("Logout Successful");
+                    navigate("/");
+                })
+                .catch((error) => console.log(error));
         }
     }
 
@@ -56,7 +54,7 @@ export const UserDetails = () => {
                     </div>
                     <div className="min-w-0 flex-1">
                         <h3 className={`font-semibold text-md truncate ${theme === 'light' ? 'text-gray-900' : 'text-white'}`}>
-                            {userDetails?.name || "new User"}
+                            {userDetails?.name || "New User"}
                         </h3>
                     </div>
                 </div>
@@ -78,7 +76,8 @@ export const UserDetails = () => {
                         {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                     </button>
 
-                    <Link to='/profileSettings'
+                    <Link
+                        to="/profileSettings"
                         className={`p-2 rounded-lg transition-all hover:scale-105 ${theme === 'light' ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-gray-800 text-gray-300'}`}
                         title="Profile Settings"
                     >
@@ -94,6 +93,7 @@ export const UserDetails = () => {
                     </button>
                 </div>
 
+                {/* Mobile Menu */}
                 <div className="sm:hidden relative">
                     <button
                         onClick={() => setMenuOpen(!menuOpen)}
@@ -104,66 +104,128 @@ export const UserDetails = () => {
                     </button>
                     {menuOpen && (
                         <div className={`absolute right-0 mt-2 w-48 rounded-xl shadow-xl ${theme === 'light' ? 'bg-white border-gray-200' : 'bg-gray-800 border-gray-700'} border z-50 overflow-hidden`}>
-                            <button className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-gray-700 text-gray-300'}`}
+                            <button
+                                className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-gray-700 text-gray-300'}`}
                                 onClick={() => setShowNewChatModel(!showNewChatModel)}
                             >
                                 <Plus className="w-5 h-5" /> <span>Add User</span>
                             </button>
-                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-gray-700 text-gray-300'}`}>
+                            <button
+                                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                                className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-gray-700 text-gray-300'}`}
+                            >
                                 {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />} <span>Theme</span>
                             </button>
-                            <button className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-gray-700 text-gray-300'}`}>
+                            <Link
+                                to="/profileSettings"
+                                className={`block w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-gray-700 text-gray-300'}`}
+                            >
                                 <Settings className="w-5 h-5" /> <span>Settings</span>
-                            </button>
-                            <button className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-red-50 text-red-600' : 'hover:bg-red-900/20 text-red-400'}`}>
+                            </Link>
+                            <button
+                                className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-colors ${theme === 'light' ? 'hover:bg-red-50 text-red-600' : 'hover:bg-red-900/20 text-red-400'}`}
+                                onClick={handleLogout}
+                            >
                                 <LogOut className="w-5 h-5" /> <span>Logout</span>
                             </button>
                         </div>
                     )}
                 </div>
             </div>
-            {showNewChatModel && <AddUser isOpen='true' />}
+            {showNewChatModel && <AddUser isOpen="true" />}
         </div>
-    )
+    );
 };
 
 export const ChatList = ({ onChatSelect, selectedChatId }) => {
     const { theme } = useContext(ThemeContext);
-    const [userChatList, setUserChatList] = useState({ chatDetails: {}, details: {} });
+    const [userChatList, setUserChatList] = useState({ chatDetails: {} });
     const { userData } = useContext(UserDataContext);
 
     useEffect(() => {
-        if (!userData?.uid) return; // wait for valid user
+        if (!userData?.uid) return;
 
         const db = getDatabase(Firebase);
         const chatRef = ref(db, `/userChatList/${userData.uid}`);
         const unsubscribe = onValue(chatRef, (res) => {
             const data = res.val();
-            setUserChatList(prev => ({ ...prev, chatDetails: data }));
+            setUserChatList({ chatDetails: data || {} });
         });
         return () => unsubscribe();
     }, [userData]);
 
     return (
-        <div className={`w-full h-screen overflow-y-auto ${theme === 'light' ? 'bg-white' : 'bg-gray-900'} rounded-b-xl shadow-lg border-x border-b ${theme === 'light' ? 'border-gray-200' : 'border-gray-700'} flex flex-col`}>
+        <div
+            className={`w-full h-screen overflow-y-auto ${theme === 'light' ? 'bg-white' : 'bg-gray-900'
+                } rounded-b-xl shadow-lg border-x border-b ${theme === 'light' ? 'border-gray-200' : 'border-gray-700'
+                } flex flex-col`}
+        >
             <div className="flex-1">
                 <div className="p-4 pb-2">
                     <div className="flex items-center justify-between mb-3">
-                        <h3 className={`font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"} uppercase tracking-wide`}>
+                        <h3
+                            className={`font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"
+                                } uppercase tracking-wide`}
+                        >
                             Recent Chats
                         </h3>
-                        <span className={`text-xs px-2 py-1 rounded-full ${theme === 'light' ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/30 text-blue-400'}`}>
-                            {userChatList.chatDetails && Object.keys(userChatList.chatDetails).length > 0
-                                ? Object.entries(userChatList?.chatDetails).length
-                                : "0"
-                            }
+                        <span
+                            className={`text-xs px-2 py-1 rounded-full ${theme === 'light'
+                                ? 'bg-blue-100 text-blue-600'
+                                : 'bg-blue-900/30 text-blue-400'
+                                }`}
+                        >
+                            {userChatList.chatDetails
+                                ? Object.keys(userChatList.chatDetails).length + 1 // +1 for Saved Messages
+                                : "1"}
                         </span>
                     </div>
                 </div>
+
                 <div className="px-4 pb-4 h-80 overflow-y-auto">
                     <div className="space-y-2">
-                        {userChatList.chatDetails && Object.keys(userChatList.chatDetails).length > 0
-                            ? Object.entries(userChatList.chatDetails).map(([key, chat]) => (
+
+                        {/* ✅ Static Saved Messages Chat */}
+                        <button
+                            onClick={() => onChatSelect("saved-messages")}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl transition-all hover:scale-[0.98] group ${selectedChatId === "saved-messages"
+                                ? theme === 'dark'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-blue-500 text-white'
+                                : theme === "dark"
+                                    ? "hover:bg-gray-800 text-white"
+                                    : "hover:bg-gray-50 text-gray-900"
+                                }`}
+                        >
+                            <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                <div className="relative">
+                                    <img
+                                        src={userData?.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png"}
+                                        alt="Saved Messages"
+                                        className="w-12 h-12 rounded-full object-cover"
+                                    />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <p className="font-semibold truncate text-sm">Saved Messages</p>
+                                    </div>
+                                    <p
+                                        className={`text-xs text-start mt-2 truncate ${selectedChatId === "saved-messages"
+                                            ? 'text-white opacity-75'
+                                            : theme === 'light'
+                                                ? 'text-gray-600'
+                                                : 'text-gray-400'
+                                            }`}
+                                    >
+                                        Personal notes and media
+                                    </p>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* ✅ Regular User Chats */}
+                        {userChatList.chatDetails &&
+                            Object.entries(userChatList.chatDetails).map(([key, chat]) => (
                                 <button
                                     key={key}
                                     onClick={() => onChatSelect(chat.chatId || key)}
@@ -188,18 +250,20 @@ export const ChatList = ({ onChatSelect, selectedChatId }) => {
                                             <div className="flex items-center justify-between mb-1">
                                                 <p className="font-semibold truncate text-sm">{chat.receiverName}</p>
                                             </div>
-                                            <p className={`text-xs text-start mt-2 truncate ${selectedChatId === chat.chatId
-                                                ? 'text-white opacity-75'
-                                                : theme === 'light' ? 'text-gray-600' : 'text-gray-400'
-                                                }`}>
+                                            <p
+                                                className={`text-xs text-start mt-2 truncate ${selectedChatId === chat.chatId
+                                                    ? 'text-white opacity-75'
+                                                    : theme === 'light'
+                                                        ? 'text-gray-600'
+                                                        : 'text-gray-400'
+                                                    }`}
+                                            >
                                                 last message
                                             </p>
                                         </div>
                                     </div>
                                 </button>
-                            ))
-                            : <div></div>
-                        }
+                            ))}
                     </div>
                 </div>
             </div>
@@ -211,14 +275,14 @@ export default function UserComponent() {
     const { theme } = useContext(ThemeContext);
     const [selectedChatId, setSelectedChatId] = useState(null);
 
-    const handleBack = () => {
-        setSelectedChatId(null);
-    };
+    const handleBack = () => setSelectedChatId(null);
 
     return (
-        <div className={`min-h-screen w-screen ${theme === 'light' ? 'bg-gradient-to-br from-blue-50 to-purple-50' : 'bg-gradient-to-br from-gray-900 to-purple-900'}`}>
+        <div className={`min-h-screen w-screen ${theme === 'light'
+            ? 'bg-gradient-to-br from-blue-50 to-purple-50'
+            : 'bg-gradient-to-br from-gray-900 to-purple-900'
+            }`}>
             <div className="flex flex-col md:flex-row min-h-screen">
-
                 {/* Left Panel */}
                 <div className="md:w-1/4 w-full border-r border-gray-300 dark:border-gray-700 overflow-y-auto">
                     <UserDetails theme={theme} />

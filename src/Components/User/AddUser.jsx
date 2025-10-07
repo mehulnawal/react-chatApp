@@ -1,7 +1,7 @@
-import { useContext, useState } from "react";
+import { useContext, useState, useRef } from "react";
 import { UserPlus, X } from "lucide-react";
 import { NewChatModalContext, UserDataContext } from "../Global/GlobalData";
-import { getDatabase, onValue, push, ref, set } from "firebase/database";
+import { getDatabase, ref, get, push, set } from "firebase/database";
 import { Firebase } from "../Global/Firebase";
 import { toast } from "react-toastify";
 
@@ -12,97 +12,122 @@ export const AddUser = () => {
     const [matchedUsers, setMatchedUsers] = useState([]);
     const { userData } = useContext(UserDataContext);
     const [selectedUser, setSelectedUser] = useState(null);
+    const debounceRef = useRef(null);
 
     if (!showNewChatModel) return null;
 
-    function handleSelectedUser(user) {
+    const handleSelectedUser = (user) => {
         setSelectedUser(user);
-    }
+        setUserName(user.userName);
+        setMatchedUsers([]);
+        setError("");
+    };
 
-    // searching user
-    // searching user
-    function handleSearchUser(e) {
-        setUserName(e.target.value);
-        const userInput = e.target.value.toLowerCase();
-        const db = getDatabase(Firebase);
-        const userRef = ref(db, "/usersData");
-        onValue(userRef, (res) => {
-            const data = res.val();
-            if (userInput !== "") {
-                const userNames = Object.entries(data)
-                    .filter(
-                        ([key, value]) =>
-                            value.name && typeof value.name === "string" &&
-                            value.name.toLowerCase().includes(userInput) &&
-                            value.id !== userData.uid
-                    )
-                    .map(([key, value]) => ({
-                        id: value.id,
-                        userName: value.name,
-                        image: value.photo
-                    }));
-                setMatchedUsers(userNames);
-            } else {
+    const handleSearchUser = (e) => {
+        const value = e.target.value;
+        setUserName(value);
+        setSelectedUser(null);
+        setError("");
+
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        debounceRef.current = setTimeout(() => {
+            const searchValue = value.toLowerCase().trim();
+            if (searchValue === "") {
                 setMatchedUsers([]);
+                return;
             }
-        });
-    }
+
+            const db = getDatabase(Firebase);
+            const userRef = ref(db, "/usersData");
+
+            get(userRef)
+                .then((snapshot) => {
+                    const data = snapshot.val();
+                    if (!data) return setMatchedUsers([]);
+
+                    const users = Object.entries(data)
+                        .filter(
+                            ([key, val]) =>
+                                val.name &&
+                                typeof val.name === "string" &&
+                                val.name.toLowerCase().includes(searchValue) &&
+                                val.id !== userData.uid
+                        )
+                        .map(([key, val]) => ({
+                            id: val.id,
+                            userName: val.name,
+                            image: val.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
+                        }));
+
+                    setMatchedUsers(users);
+                })
+                .catch((err) => {
+                    console.error("Error fetching users:", err);
+                    setMatchedUsers([]);
+                });
+        }, 300); // 300ms debounce
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
         if (userName.trim() === "") {
             setError("Name is required.");
             toast.error("Name is required.");
             return;
-        } else if (!selectedUser) {
+        }
+
+        if (!selectedUser) {
             setError("Please select a user from the list.");
             toast.error("Please select a user from the list.");
             return;
-        } else {
-            const date = new Date();
-            const todayDate = String(date.getDate()).padStart(2, "0");
-            const month = String(date.getMonth() + 1).padStart(2, "0");
-            const year = date.getFullYear();
-            const hours = String(date.getHours()).padStart(2, "0");
-            const minutes = String(date.getMinutes()).padStart(2, "0");
-            const createdAt = `${todayDate}${month}${year}${hours}${minutes}`;
-
-            const db = getDatabase(Firebase);
-            let creatorId = userData.uid;
-            const receiverId = selectedUser.id;
-
-            const newChatRef = push(ref(db, `/userChatList/${creatorId}`));
-            const chatId = newChatRef.key;
-
-            set(newChatRef, {
-                chatId: chatId,
-                createdBy: creatorId,
-                creationDate: createdAt,
-                receiverId: receiverId,
-                receiverName: selectedUser.userName,
-                receiverImage: selectedUser.image,
-                isSeen: false,
-                lastMessage: "",
-            })
-                .then(() => {
-                    toast.success("Chat created successfully!");
-                    setShowNewChatModel(false);
-                    setError("");
-                    setUserName("");
-                    setSelectedUser(null);
-                    setMatchedUsers([]);
-                })
-                .catch(() => {
-                    toast.error("Failed to create chat. Please try again.");
-                });
         }
+
+        const date = new Date();
+        const todayDate = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, "0");
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        const createdAt = `${todayDate}${month}${year}${hours}${minutes}`;
+
+        const db = getDatabase(Firebase);
+        const creatorId = userData.uid;
+        const receiverId = selectedUser.id;
+
+        // Create new chat
+        const newChatRef = push(ref(db, `/userChatList/${creatorId}`));
+        const chatId = newChatRef.key;
+
+        set(newChatRef, {
+            chatId,
+            createdBy: creatorId,
+            creationDate: createdAt,
+            receiverId,
+            receiverName: selectedUser.userName,
+            receiverImage: selectedUser.image,
+            isSeen: false,
+            lastMessage: "",
+        })
+            .then(() => {
+                toast.success("Chat created successfully!");
+                setShowNewChatModel(false);
+                setError("");
+                setUserName("");
+                setSelectedUser(null);
+                setMatchedUsers([]);
+            })
+            .catch(() => {
+                toast.error("Failed to create chat. Please try again.");
+            });
     };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-300 dark:border-gray-700 max-w-md w-full p-6 relative">
                 <button
-                    onClick={() => setShowNewChatModel(!showNewChatModel)}
+                    onClick={() => setShowNewChatModel(false)}
                     className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                     aria-label="Close add user form"
                 >
@@ -125,12 +150,6 @@ export const AddUser = () => {
                             id="userName"
                             value={userName}
                             onChange={handleSearchUser}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    handleSubmit(e);
-                                }
-                            }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                             placeholder="Enter user name"
                         />
@@ -156,21 +175,24 @@ export const AddUser = () => {
 
                 <span className="text-red-500 block mt-2">{error}</span>
 
-                {matchedUsers && matchedUsers.length > 0 ? (
-                    matchedUsers.map((user) => (
-                        <div
-                            key={user.id}
-                            onClick={() => handleSelectedUser(user)}
-                            className="cursor-pointer p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded mb-1"
-                        >
-                            {user.userName}
-                        </div>
-                    ))
-                ) : (
-                    <div className="text-center mt-6 text-lg dark:text-gray-300 text-gray-700">
+                {/* matched users list */}
+                {matchedUsers.length > 0 ? (
+                    <div className="mt-4 max-h-40 overflow-y-auto">
+                        {matchedUsers.map((user) => (
+                            <div
+                                key={user.id}
+                                onClick={() => handleSelectedUser(user)}
+                                className="cursor-pointer p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded mb-1"
+                            >
+                                {user.userName}
+                            </div>
+                        ))}
+                    </div>
+                ) : userName.trim() !== "" ? (
+                    <div className="text-center mt-4 text-lg dark:text-gray-300 text-gray-700">
                         No matched users
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );

@@ -11,7 +11,7 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
     const { userData } = useContext(UserDataContext);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-    const [currentChat, setCurrentChat] = useState(null); // Chat metadata (receiver info)
+    const [currentChat, setCurrentChat] = useState(null); // Chat metadata
     const [messages, setMessages] = useState({});
     const [messageText, setMessageText] = useState('');
 
@@ -22,16 +22,23 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Fetch chat metadata
+    // Fetch chat metadata (skip for saved-messages)
     useEffect(() => {
         if (!chatId || !userData?.uid) {
             setCurrentChat(null);
             return;
         }
 
+        if (chatId === "saved-messages") {
+            setCurrentChat({
+                receiverName: "Saved Messages",
+                receiverImage: userData?.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png"
+            });
+            return;
+        }
+
         const db = getDatabase(Firebase);
         const chatMetaRef = ref(db, `/userChatList/${userData.uid}/${chatId}`);
-
         const unsubscribeMeta = onValue(chatMetaRef, (snap) => {
             if (snap.exists()) setCurrentChat(snap.val());
             else setCurrentChat(null);
@@ -45,7 +52,13 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
         if (!chatId || !userData?.uid) return;
 
         const db = getDatabase(Firebase);
-        const messagesRef = ref(db, `/userMessages/${userData.uid}/${chatId}`);
+        let messagesRef;
+
+        if (chatId === "saved-messages") {
+            messagesRef = ref(db, `/savedMessages/${userData.uid}`);
+        } else {
+            messagesRef = ref(db, `/userMessages/${userData.uid}/${chatId}`);
+        }
 
         const unsubscribeMsgs = onValue(messagesRef, (snap) => {
             setMessages(snap.val() || {});
@@ -69,44 +82,46 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
         const messageData = {
             text: messageText,
             senderId: userData.uid,
-            receiverId: chatId,
-            imageUrl: userData.photo || "https://res.cloudinary.com/doxycgig/image/upload/v1758604889/chat-avatart_ifaiiz.png",
             timestamp: createdAt,
             type: "text",
+            imageUrl: userData.photo || "https://res.cloudinary.com/doxycgig/image/upload/v1758604889/chat-avatart_ifaiiz.png"
         };
 
-        // --- Save message for sender ---
-        const senderRef = push(ref(db, `/userMessages/${userData.uid}/${chatId}`));
-        set(senderRef, messageData);
+        if (chatId === "saved-messages") {
+            // One-way chat: store under savedMessages/userId
+            const msgRef = push(ref(db, `/savedMessages/${userData.uid}`));
+            set(msgRef, messageData);
+        } else {
+            // Dual chat logic for regular chats
+            const senderRef = push(ref(db, `/userMessages/${userData.uid}/${chatId}`));
+            set(senderRef, messageData);
 
-        // --- Save message for receiver ---
-        const receiverRef = push(ref(db, `/userMessages/${chatId}/${userData.uid}`));
-        set(receiverRef, messageData);
+            const receiverRef = push(ref(db, `/userMessages/${chatId}/${userData.uid}`));
+            set(receiverRef, messageData);
 
-        // --- Update chat list metadata for sender ---
-        set(ref(db, `/userChatList/${userData.uid}/${chatId}`), {
-            chatId: chatId, // ✅ Add this
-            receiverId: chatId,
-            receiverName: currentChat?.receiverName || "Unknown",
-            receiverImage: currentChat?.receiverImage || "https://res.cloudinary.com/doxycgig/image/upload/v1758604889/chat-avatart_ifaiiz.png",
-            lastMessage: messageText,
-            lastTimestamp: createdAt,
-        });
+            // Update chat list metadata for sender
+            set(ref(db, `/userChatList/${userData.uid}/${chatId}`), {
+                chatId: chatId,
+                receiverId: chatId,
+                receiverName: currentChat?.receiverName || "Unknown",
+                receiverImage: currentChat?.receiverImage || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
+                lastMessage: messageText,
+                lastTimestamp: createdAt
+            });
 
-        // --- Update chat list metadata for receiver ---
-        set(ref(db, `/userChatList/${chatId}/${userData.uid}`), {
-            chatId: userData.uid, // ✅ Add this
-            receiverId: userData.uid,
-            receiverName: userData.displayName || "Unknown",
-            receiverImage: userData.photo || "https://res.cloudinary.com/doxycgig/image/upload/v1758604889/chat-avatart_ifaiiz.png",
-            lastMessage: messageText,
-            lastTimestamp: createdAt,
-        });
-
+            // Update chat list metadata for receiver
+            set(ref(db, `/userChatList/${chatId}/${userData.uid}`), {
+                chatId: userData.uid,
+                receiverId: userData.uid,
+                receiverName: userData.displayName || "Unknown",
+                receiverImage: userData.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
+                lastMessage: messageText,
+                lastTimestamp: createdAt
+            });
+        }
 
         setMessageText('');
     };
-
 
     // If no chat selected
     if (!chatId || !currentChat) {
@@ -152,37 +167,15 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
                     Object.entries(messages).map(([key, msg]) => {
                         const isSender = msg.senderId === userData.uid;
                         return (
-                            <div
-                                key={key}
-                                className={`w-full flex ${isSender ? "justify-end" : "justify-start"}`}
-                            >
-                                {!isSender && (
-                                    <img
-                                        src={msg.imageUrl}
-                                        alt="avatar"
-                                        className="w-8 h-8 rounded-full mr-2 self-end"
-                                    />
-                                )}
-
-                                <div
-                                    className={`max-w-[70%] px-4 py-2 rounded-2xl shadow
-              ${isSender ? "bg-blue-600 text-white rounded-br-none" : "bg-gray-200 text-gray-900 rounded-bl-none"}
-            `}
-                                >
+                            <div key={key} className={`w-full flex ${isSender ? "justify-end" : "justify-start"}`}>
+                                {!isSender && <img src={msg.imageUrl} alt="avatar" className="w-8 h-8 rounded-full mr-2 self-end" />}
+                                <div className={`max-w-[70%] px-4 py-2 rounded-2xl shadow ${isSender ? "bg-blue-600 text-white rounded-br-none" : "bg-gray-200 text-gray-900 rounded-bl-none"}`}>
                                     <p className="break-words">{msg.text}</p>
                                     <span className={`block text-xs mt-1 text-right ${isSender ? "text-white/70" : "text-gray-500"}`}>
-                                        {msg.timestamp.slice(8, 10)}:{msg.timestamp.slice(10)}{" "}
-                                        {parseInt(msg.timestamp.slice(8, 10)) > 12 ? "PM" : "AM"}
+                                        {msg.timestamp.slice(8, 10)}:{msg.timestamp.slice(10)} {parseInt(msg.timestamp.slice(8, 10)) > 12 ? "PM" : "AM"}
                                     </span>
                                 </div>
-
-                                {isSender && (
-                                    <img
-                                        src={msg.imageUrl}
-                                        alt="avatar"
-                                        className="w-8 h-8 rounded-full ml-2 self-end"
-                                    />
-                                )}
+                                {isSender && <img src={msg.imageUrl} alt="avatar" className="w-8 h-8 rounded-full ml-2 self-end" />}
                             </div>
                         );
                     })
@@ -190,7 +183,6 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
                     <div className="text-center text-gray-500">Start a conversation now!</div>
                 )}
             </div>
-
 
             {/* Input */}
             <div className={`p-4 border-t ${theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
