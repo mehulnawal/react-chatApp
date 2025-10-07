@@ -1,19 +1,25 @@
 import { Send, Paperclip, ArrowLeft, MessageCircle } from 'lucide-react';
 import { ThemeContext } from '../Global/Theme';
-import { useContext, useState, useEffect } from 'react';
+import { useContext, useState, useEffect, useRef } from 'react';
 import { getDatabase, onValue, push, ref, set } from 'firebase/database';
 import { Firebase } from '../Global/Firebase';
 import { UserDataContext } from '../Global/GlobalData';
-import { toast } from 'react-toastify';
 
 export const ChatRoomComponent = ({ chatId, onBack }) => {
     const { theme } = useContext(ThemeContext);
     const { userData } = useContext(UserDataContext);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-    const [currentChat, setCurrentChat] = useState(null); // Chat metadata
+    const [currentChat, setCurrentChat] = useState(null);
     const [messages, setMessages] = useState({});
     const [messageText, setMessageText] = useState('');
+
+    const messagesEndRef = useRef(null);
+
+    // Scroll to bottom when messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
 
     // Detect mobile resize
     useEffect(() => {
@@ -22,23 +28,16 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Fetch chat metadata (skip for saved-messages)
+    // Fetch chat metadata
     useEffect(() => {
-        if (!chatId || !userData?.uid) {
+        if (!chatId) {
             setCurrentChat(null);
-            return;
-        }
-
-        if (chatId === "saved-messages") {
-            setCurrentChat({
-                receiverName: "Saved Messages",
-                receiverImage: userData?.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png"
-            });
             return;
         }
 
         const db = getDatabase(Firebase);
         const chatMetaRef = ref(db, `/userChatList/${userData.uid}/${chatId}`);
+
         const unsubscribeMeta = onValue(chatMetaRef, (snap) => {
             if (snap.exists()) setCurrentChat(snap.val());
             else setCurrentChat(null);
@@ -47,83 +46,49 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
         return () => unsubscribeMeta();
     }, [chatId, userData?.uid]);
 
-    // Fetch chat messages
+    // Fetch chat messages (single shared path)
     useEffect(() => {
-        if (!chatId || !userData?.uid) return;
+        if (!chatId) return;
 
         const db = getDatabase(Firebase);
-        let messagesRef;
-
-        if (chatId === "saved-messages") {
-            messagesRef = ref(db, `/savedMessages/${userData.uid}`);
-        } else {
-            messagesRef = ref(db, `/userMessages/${userData.uid}/${chatId}`);
-        }
+        const messagesRef = ref(db, `/userMessages/${chatId}`);
 
         const unsubscribeMsgs = onValue(messagesRef, (snap) => {
             setMessages(snap.val() || {});
         });
 
         return () => unsubscribeMsgs();
-    }, [chatId, userData?.uid]);
+    }, [chatId]);
 
     const handleSendMessage = () => {
         if (!messageText.trim()) return;
 
-        const date = new Date();
-        const today = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const hour = String(date.getHours()).padStart(2, '0');
-        const minute = String(date.getMinutes()).padStart(2, '0');
-        const createdAt = `${today}${month}${year}${hour}${minute}`;
+        const createdAt = Date.now(); // timestamp in ms
 
-        const db = getDatabase(Firebase);
         const messageData = {
             text: messageText,
             senderId: userData.uid,
+            imageUrl: userData.photo || "https://res.cloudinary.com/doxycgig/image/upload/v1758604889/chat-avatart_ifaiiz.png",
             timestamp: createdAt,
             type: "text",
-            imageUrl: userData.photo || "https://res.cloudinary.com/doxycgig/image/upload/v1758604889/chat-avatart_ifaiiz.png"
         };
 
-        if (chatId === "saved-messages") {
-            // One-way chat: store under savedMessages/userId
-            const msgRef = push(ref(db, `/savedMessages/${userData.uid}`));
-            set(msgRef, messageData);
-        } else {
-            // Dual chat logic for regular chats
-            const senderRef = push(ref(db, `/userMessages/${userData.uid}/${chatId}`));
-            set(senderRef, messageData);
+        const db = getDatabase(Firebase);
 
-            const receiverRef = push(ref(db, `/userMessages/${chatId}/${userData.uid}`));
-            set(receiverRef, messageData);
+        // Save message under shared chatId
+        const newMessageRef = push(ref(db, `/userMessages/${chatId}`));
+        set(newMessageRef, messageData);
 
-            // Update chat list metadata for sender
-            set(ref(db, `/userChatList/${userData.uid}/${chatId}`), {
-                chatId: chatId,
-                receiverId: chatId,
-                receiverName: currentChat?.receiverName || "Unknown",
-                receiverImage: currentChat?.receiverImage || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
-                lastMessage: messageText,
-                lastTimestamp: createdAt
-            });
+        // Update last message in chat metadata for both users
+        set(ref(db, `/userChatList/${userData.uid}/${chatId}/lastMessage`), messageText);
+        set(ref(db, `/userChatList/${userData.uid}/${chatId}/lastTimestamp`), createdAt);
 
-            // Update chat list metadata for receiver
-            set(ref(db, `/userChatList/${chatId}/${userData.uid}`), {
-                chatId: userData.uid,
-                receiverId: userData.uid,
-                receiverName: userData.displayName || "Unknown",
-                receiverImage: userData.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
-                lastMessage: messageText,
-                lastTimestamp: createdAt
-            });
-        }
+        set(ref(db, `/userChatList/${currentChat.receiverId}/${chatId}/lastMessage`), messageText);
+        set(ref(db, `/userChatList/${currentChat.receiverId}/${chatId}/lastTimestamp`), createdAt);
 
         setMessageText('');
     };
 
-    // If no chat selected
     if (!chatId || !currentChat) {
         return (
             <div className={`min-h-screen flex flex-col items-center justify-center p-8 ${theme === "dark" ? "bg-gray-900" : "bg-gray-50"}`}>
@@ -146,11 +111,7 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
             <div className={`flex items-center justify-between p-4 border-b ${theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
                 <div className="flex items-center space-x-4">
                     {isMobile && onBack && (
-                        <button
-                            onClick={onBack}
-                            className={`p-2 rounded-full transition-all duration-200 hover:scale-110 ${theme === "dark" ? "text-gray-300 hover:bg-gray-700 hover:text-white" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}
-                            aria-label="Back"
-                        >
+                        <button onClick={onBack} className={`p-2 rounded-full transition-all duration-200 hover:scale-110 ${theme === "dark" ? "text-gray-300 hover:bg-gray-700 hover:text-white" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}>
                             <ArrowLeft className="w-5 h-5" />
                         </button>
                     )}
@@ -168,20 +129,25 @@ export const ChatRoomComponent = ({ chatId, onBack }) => {
                         const isSender = msg.senderId === userData.uid;
                         return (
                             <div key={key} className={`w-full flex ${isSender ? "justify-end" : "justify-start"}`}>
-                                {!isSender && <img src={msg.imageUrl} alt="avatar" className="w-8 h-8 rounded-full mr-2 self-end" />}
+                                {!isSender && (
+                                    <img src={msg.imageUrl} alt="avatar" className="w-8 h-8 rounded-full mr-2 self-end" />
+                                )}
                                 <div className={`max-w-[70%] px-4 py-2 rounded-2xl shadow ${isSender ? "bg-blue-600 text-white rounded-br-none" : "bg-gray-200 text-gray-900 rounded-bl-none"}`}>
                                     <p className="break-words">{msg.text}</p>
                                     <span className={`block text-xs mt-1 text-right ${isSender ? "text-white/70" : "text-gray-500"}`}>
-                                        {msg.timestamp.slice(8, 10)}:{msg.timestamp.slice(10)} {parseInt(msg.timestamp.slice(8, 10)) > 12 ? "PM" : "AM"}
+                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                 </div>
-                                {isSender && <img src={msg.imageUrl} alt="avatar" className="w-8 h-8 rounded-full ml-2 self-end" />}
+                                {isSender && (
+                                    <img src={msg.imageUrl} alt="avatar" className="w-8 h-8 rounded-full ml-2 self-end" />
+                                )}
                             </div>
                         );
                     })
                 ) : (
                     <div className="text-center text-gray-500">Start a conversation now!</div>
                 )}
+                <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}

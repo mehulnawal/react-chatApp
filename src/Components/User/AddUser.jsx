@@ -1,7 +1,7 @@
-import { useContext, useState, useRef } from "react";
+import { useContext, useEffect, useState } from "react";
 import { UserPlus, X } from "lucide-react";
 import { NewChatModalContext, UserDataContext } from "../Global/GlobalData";
-import { getDatabase, ref, get, push, set } from "firebase/database";
+import { getDatabase, onValue, push, ref, set } from "firebase/database";
 import { Firebase } from "../Global/Firebase";
 import { toast } from "react-toastify";
 
@@ -12,115 +12,84 @@ export const AddUser = () => {
     const [matchedUsers, setMatchedUsers] = useState([]);
     const { userData } = useContext(UserDataContext);
     const [selectedUser, setSelectedUser] = useState(null);
-    const debounceRef = useRef(null);
 
     if (!showNewChatModel) return null;
 
-    const handleSelectedUser = (user) => {
+    function handleSelectedUser(user) {
         setSelectedUser(user);
-        setUserName(user.userName);
-        setMatchedUsers([]);
-        setError("");
-    };
+        setUserName(user.userName); // autofill selected name
+    }
 
-    const handleSearchUser = (e) => {
-        const value = e.target.value;
-        setUserName(value);
-        setSelectedUser(null);
-        setError("");
+    // Search users
+    function handleSearchUser(e) {
+        const input = e.target.value;
+        setUserName(input);
+        const db = getDatabase(Firebase);
+        const userRef = ref(db, "/usersData");
 
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-
-        debounceRef.current = setTimeout(() => {
-            const searchValue = value.toLowerCase().trim();
-            if (searchValue === "") {
+        onValue(userRef, (res) => {
+            const data = res.val();
+            if (!data) return;
+            if (input.trim() === "") {
                 setMatchedUsers([]);
                 return;
             }
 
-            const db = getDatabase(Firebase);
-            const userRef = ref(db, "/usersData");
-
-            get(userRef)
-                .then((snapshot) => {
-                    const data = snapshot.val();
-                    if (!data) return setMatchedUsers([]);
-
-                    const users = Object.entries(data)
-                        .filter(
-                            ([key, val]) =>
-                                val.name &&
-                                typeof val.name === "string" &&
-                                val.name.toLowerCase().includes(searchValue) &&
-                                val.id !== userData.uid
-                        )
-                        .map(([key, val]) => ({
-                            id: val.id,
-                            userName: val.name,
-                            image: val.photo || "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
-                        }));
-
-                    setMatchedUsers(users);
-                })
-                .catch((err) => {
-                    console.error("Error fetching users:", err);
-                    setMatchedUsers([]);
-                });
-        }, 300); // 300ms debounce
-    };
+            const filtered = Object.entries(data)
+                .filter(([key, value]) => value.name?.toLowerCase().includes(input.toLowerCase()) && key !== userData.uid)
+                .map(([key, value]) => ({
+                    id: key,
+                    userName: value.name,
+                    image: value.photo
+                }));
+            setMatchedUsers(filtered);
+        });
+    }
 
     const handleSubmit = (e) => {
         e.preventDefault();
-
-        if (userName.trim() === "") {
-            setError("Name is required.");
-            toast.error("Name is required.");
-            return;
-        }
-
         if (!selectedUser) {
             setError("Please select a user from the list.");
             toast.error("Please select a user from the list.");
             return;
         }
 
-        const date = new Date();
-        const todayDate = String(date.getDate()).padStart(2, "0");
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const year = date.getFullYear();
-        const hours = String(date.getHours()).padStart(2, "0");
-        const minutes = String(date.getMinutes()).padStart(2, "0");
-        const createdAt = `${todayDate}${month}${year}${hours}${minutes}`;
-
         const db = getDatabase(Firebase);
-        const creatorId = userData.uid;
-        const receiverId = selectedUser.id;
-
-        // Create new chat
-        const newChatRef = push(ref(db, `/userChatList/${creatorId}`));
+        const newChatRef = push(ref(db, `/userMessages`)); // generate unique chatId
         const chatId = newChatRef.key;
 
-        set(newChatRef, {
+        const createdAt = Date.now();
+
+        const chatMetaForCurrentUser = {
             chatId,
-            createdBy: creatorId,
-            creationDate: createdAt,
-            receiverId,
+            receiverId: selectedUser.id,
             receiverName: selectedUser.userName,
             receiverImage: selectedUser.image,
-            isSeen: false,
             lastMessage: "",
-        })
-            .then(() => {
-                toast.success("Chat created successfully!");
-                setShowNewChatModel(false);
-                setError("");
-                setUserName("");
-                setSelectedUser(null);
-                setMatchedUsers([]);
-            })
-            .catch(() => {
-                toast.error("Failed to create chat. Please try again.");
-            });
+            lastTimestamp: createdAt,
+            createdBy: userData.uid
+        };
+
+        const chatMetaForSelectedUser = {
+            chatId,
+            receiverId: userData.uid,
+            receiverName: userData.displayName || "Unknown",
+            receiverImage: userData.photo,
+            lastMessage: "",
+            lastTimestamp: createdAt,
+            createdBy: userData.uid
+        };
+
+        // Write chat metadata for both users
+        set(ref(db, `/userChatList/${userData.uid}/${chatId}`), chatMetaForCurrentUser);
+        set(ref(db, `/userChatList/${selectedUser.id}/${chatId}`), chatMetaForSelectedUser);
+
+        toast.success("Chat created successfully!");
+        setShowNewChatModel(false);
+        setError("");
+        setUserName("");
+        setSelectedUser(null);
+        setMatchedUsers([]);
     };
 
     return (
@@ -129,18 +98,15 @@ export const AddUser = () => {
                 <button
                     onClick={() => setShowNewChatModel(false)}
                     className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    aria-label="Close add user form"
                 >
                     <X className="w-6 h-6" />
                 </button>
 
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-white flex items-center space-x-2 mb-6">
-                    <UserPlus className="w-6 h-6" />
-                    <span>Create new chat</span>
+                    <UserPlus className="w-6 h-6" /> <span>Create new chat</span>
                 </h2>
 
                 <form className="space-y-4" onSubmit={handleSubmit}>
-                    {/* user search input */}
                     <div>
                         <label htmlFor="userName" className="block text-gray-700 dark:text-gray-300 mb-1">
                             Search User
@@ -155,14 +121,12 @@ export const AddUser = () => {
                         />
                     </div>
 
-                    {/* show selected users */}
                     {selectedUser && (
                         <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-900 dark:text-white">
                             Selected: {selectedUser.userName}
                         </div>
                     )}
 
-                    {/* submit button */}
                     <div className="flex justify-end space-x-2">
                         <button
                             type="submit"
@@ -173,11 +137,10 @@ export const AddUser = () => {
                     </div>
                 </form>
 
-                <span className="text-red-500 block mt-2">{error}</span>
+                {error && <span className="text-red-500 block mt-2">{error}</span>}
 
-                {/* matched users list */}
-                {matchedUsers.length > 0 ? (
-                    <div className="mt-4 max-h-40 overflow-y-auto">
+                {matchedUsers.length > 0 && (
+                    <div className="mt-4 max-h-48 overflow-y-auto">
                         {matchedUsers.map((user) => (
                             <div
                                 key={user.id}
@@ -188,11 +151,7 @@ export const AddUser = () => {
                             </div>
                         ))}
                     </div>
-                ) : userName.trim() !== "" ? (
-                    <div className="text-center mt-4 text-lg dark:text-gray-300 text-gray-700">
-                        No matched users
-                    </div>
-                ) : null}
+                )}
             </div>
         </div>
     );
